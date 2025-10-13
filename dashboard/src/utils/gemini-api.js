@@ -2,7 +2,7 @@
 // Gemini AI integration - NO FALLBACK, AI ONLY
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent';
 
 // In-memory cache
 const analysisCache = new Map();
@@ -93,7 +93,7 @@ Rules:
           temperature: 0.7,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 2048,
         }
       })
     });
@@ -106,11 +106,24 @@ Rules:
 
     const data = await response.json();
     
+    // Handle different response structures
     if (!data.candidates || !data.candidates[0]) {
-      throw new Error('No response from Gemini API');
+      console.error('API Response:', data);
+      throw new Error('No response from Gemini API - ' + (data.error?.message || 'Unknown error'));
     }
 
-    const generatedText = data.candidates[0].content.parts[0].text;
+    const candidate = data.candidates[0];
+    if (!candidate.content || !candidate.content.parts || !candidate.content.parts[0]) {
+      console.error('API Response structure:', candidate);
+      throw new Error('Invalid response structure from Gemini API');
+    }
+
+    const generatedText = candidate.content.parts[0].text;
+    
+    if (!generatedText) {
+      console.error('No text in response:', candidate);
+      throw new Error('No text content in Gemini response');
+    }
     
     // Extract JSON from response
     let jsonText = generatedText.trim();

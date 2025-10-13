@@ -386,10 +386,33 @@ const FinanceContentDashboard = () => {
               {aiAnalysis && (
                 <div className="mt-8 space-y-6">
                   <div className="text-center">
-                    <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 text-white text-3xl font-bold shadow-lg">
-                      {aiAnalysis.score}
-                    </div>
-                    <p className="text-slate-600 mt-2 text-sm sm:text-base">Engagement Score</p>
+                    {/* Dynamic color based on score */}
+                    {aiAnalysis.score < 30 && (
+                      <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-red-400 to-red-500 text-white text-3xl font-bold shadow-lg">
+                        {aiAnalysis.score}
+                      </div>
+                    )}
+                    {aiAnalysis.score >= 30 && aiAnalysis.score < 50 && (
+                      <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-orange-400 to-orange-500 text-white text-3xl font-bold shadow-lg">
+                        {aiAnalysis.score}
+                      </div>
+                    )}
+                    {aiAnalysis.score >= 50 && aiAnalysis.score < 70 && (
+                      <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-500 text-white text-3xl font-bold shadow-lg">
+                        {aiAnalysis.score}
+                      </div>
+                    )}
+                    {aiAnalysis.score >= 70 && aiAnalysis.score < 85 && (
+                      <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-lime-400 to-lime-500 text-white text-3xl font-bold shadow-lg">
+                        {aiAnalysis.score}
+                      </div>
+                    )}
+                    {aiAnalysis.score >= 85 && (
+                      <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 text-white text-3xl font-bold shadow-lg">
+                        {aiAnalysis.score}
+                      </div>
+                    )}
+                    <p className="text-slate-600 mt-2 text-sm sm:text-base">Engagement Score <span className="text-slate-500">(out of 100)</span></p>
                   </div>
 
                   {aiAnalysis.strengths.length > 0 && (

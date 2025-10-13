@@ -1,12 +1,8 @@
-# .github/workflows/daily-scrape.yml
-# Automated daily scraper that runs at 2 AM IST (8:30 PM UTC previous day)
-# Updates dashboard data automatically
-
 name: Daily Finance Content Scraper
 
 on:
   schedule:
-    # Runs daily at 2:00 AM IST (8:30 PM UTC)
+    # Runs daily at 2:00 AM IST (8:30 PM UTC previous day)
     - cron: '30 20 * * *'
   
   # Allow manual trigger from GitHub UI
@@ -19,6 +15,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -34,54 +32,66 @@ jobs:
         env:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
-          cd dashboard
-          # Create temporary .env for scraper
-          echo "YOUTUBE_API_KEY=$YOUTUBE_API_KEY" > scraper_env.txt
-          cd ..
+          # Create temporary env file for scraper
+          echo "API_KEY='$YOUTUBE_API_KEY'" > temp_env.txt
+          # Run scraper from root directory
           python scraper.py
-      
-      - name: Move latest data to dashboard
-        run: |
-          # Find the latest generated JSON file
-          LATEST_FILE=$(ls -t finance_content_data_*.json | head -1)
-          if [ -f "$LATEST_FILE" ]; then
-            cp "$LATEST_FILE" dashboard/src/data/finance_content_data.json
-            echo "Updated dashboard with: $LATEST_FILE"
-          else
-            echo "No new data file generated"
+          # Verify output was created
+          if [ ! -f finance_content_data_*.json ]; then
+            echo "Error: Scraper did not generate output file"
             exit 1
           fi
       
-      - name: Commit and push changes
+      - name: Find latest data file
+        id: find_file
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "Automated Scraper"
+          LATEST_FILE=$(ls -t finance_content_data_*.json 2>/dev/null | head -1)
+          if [ -z "$LATEST_FILE" ]; then
+            echo "Error: No data file found"
+            exit 1
+          fi
+          echo "latest_file=$LATEST_FILE" >> $GITHUB_OUTPUT
+          echo "Found file: $LATEST_FILE"
+      
+      - name: Copy data to dashboard
+        run: |
+          SOURCE_FILE="${{ steps.find_file.outputs.latest_file }}"
+          DEST_FILE="dashboard/src/data/finance_content_data.json"
           
-          # Check if there are changes
-          if git diff --quiet; then
-            echo "No changes to commit"
+          if [ -f "$SOURCE_FILE" ]; then
+            cp "$SOURCE_FILE" "$DEST_FILE"
+            echo "Copied $SOURCE_FILE to $DEST_FILE"
+            ls -lh "$DEST_FILE"
           else
-            git add dashboard/src/data/finance_content_data.json
-            git commit -m "🤖 Automated daily scrape - $(date +'%Y-%m-%d %H:%M IST')"
-            git push
-            echo "✓ Data updated and pushed successfully"
+            echo "Error: Source file not found: $SOURCE_FILE"
+            exit 1
           fi
       
-      - name: Log scrape completion
+      - name: Configure Git
         run: |
-          echo "Scraper completed at $(date)"
-          echo "Data file size: $(du -h dashboard/src/data/finance_content_data.json | cut -f1)"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
       
-      - name: Notify on failure
-        if: failure()
+      - name: Commit and push changes
         run: |
-          echo "⚠️ Scraper failed! Check the logs above."
-          exit 1
-
-# Note: To set up this workflow:
-# 1. Store your YouTube API key as a GitHub Secret named 'YOUTUBE_API_KEY'
-#    - Go to Settings → Secrets and variables → Actions
-#    - Create new repository secret with your YouTube API key
-# 2. The workflow will run automatically daily at 2 AM IST
-# 3. You can also trigger manually from Actions tab
-# 4. Each run updates the data and auto-deploys on Vercel (via GitHub integration)
+          # Check if there are actual changes
+          if git diff --quiet dashboard/src/data/finance_content_data.json; then
+            echo "No changes in data file - skipping commit"
+          else
+            git add dashboard/src/data/finance_content_data.json
+            
+            # Get statistics for commit message
+            VIDEO_COUNT=$(python -c "import json; data=json.load(open('dashboard/src/data/finance_content_data.json')); print(len(data))")
+            
+            git commit -m "🤖 Automated daily scrape - Updated with $VIDEO_COUNT videos"
+            git push
+            echo "✓ Successfully committed and pushed updates"
+          fi
+      
+      - name: Scrape summary
+        if: always()
+        run: |
+          echo "=== Scraper Execution Summary ==="
+          echo "Timestamp: $(date)"
+          echo "File size: $(du -h dashboard/src/data/finance_content_data.json | cut -f1)"
+          echo "Status: ${{ job.status }}"
