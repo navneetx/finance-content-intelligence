@@ -12,7 +12,11 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 # Replace with YOUR YouTube API key
-API_KEY = 'YOUR_YOUTUBE_API_KEY_HERE'
+API_KEY = os.getenv('YOUTUBE_API_KEY') or 'YOUR_YOUTUBE_API_KEY_HERE'
+
+if API_KEY == 'YOUR_YOUTUBE_API_KEY_HERE':
+    print("ERROR: Please set YOUTUBE_API_KEY environment variable or in the script!")
+    exit(1)
 # Expanded list of 15 finance channels
 FINANCE_CHANNELS = [
     'Groww',
