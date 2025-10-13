@@ -1,5 +1,5 @@
 // src/utils/gemini-api.js
-// Gemini AI integration for title analysis
+// Gemini AI integration - NO FALLBACK, AI ONLY
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
@@ -8,7 +8,7 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const analysisCache = new Map();
 
 /**
- * Analyze a content title using Gemini AI
+ * Analyze a content title using Gemini AI (NO FALLBACK)
  */
 export async function analyzeTitleWithGemini(title, referenceData = []) {
   // Check cache first
@@ -20,8 +20,24 @@ export async function analyzeTitleWithGemini(title, referenceData = []) {
 
   // Check if API key is set
   if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_gemini_api_key_here') {
-    console.warn('Gemini API key not set, using fallback analysis');
-    return getFallbackAnalysis(title);
+    throw new Error('Gemini API key not configured. Please add VITE_GEMINI_API_KEY to environment variables.');
+  }
+
+  // Validate title is meaningful (prevent random letter strings)
+  const wordCount = title.trim().split(/\s+/).length;
+  const hasLetters = /[a-zA-Z]{3,}/.test(title);
+  const hasMinLength = title.length >= 5;
+  
+  if (wordCount < 2) {
+    throw new Error('Please enter a title with at least 2 words.');
+  }
+  
+  if (!hasLetters) {
+    throw new Error('Title must contain meaningful text (letters/words).');
+  }
+  
+  if (!hasMinLength) {
+    throw new Error('Title must be at least 5 characters long.');
   }
 
   // Get top performing titles for context
@@ -58,7 +74,8 @@ Rules:
 - Be specific and actionable
 - Suggestions should be creative but realistic
 - Consider finance audience (investors, beginners)
-- Avoid generic advice`;
+- Avoid generic advice
+- Give honest scores (random letters should score 0-10)`;
 
   try {
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
@@ -84,10 +101,15 @@ Rules:
     if (!response.ok) {
       const errorData = await response.json();
       console.error('Gemini API error:', errorData);
-      throw new Error(`API error: ${response.status}`);
+      throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
     }
 
     const data = await response.json();
+    
+    if (!data.candidates || !data.candidates[0]) {
+      throw new Error('No response from Gemini API');
+    }
+
     const generatedText = data.candidates[0].content.parts[0].text;
     
     // Extract JSON from response
@@ -111,9 +133,13 @@ Rules:
     const analysis = JSON.parse(jsonText);
     
     // Validate structure
-    if (!analysis.score || !analysis.strengths || !analysis.improvements || !analysis.suggestions) {
-      throw new Error('Invalid response structure');
+    if (typeof analysis.score !== 'number' || !Array.isArray(analysis.strengths) || 
+        !Array.isArray(analysis.improvements) || !Array.isArray(analysis.suggestions)) {
+      throw new Error('Invalid response structure from Gemini');
     }
+
+    // Ensure score is between 0-100
+    analysis.score = Math.max(0, Math.min(100, analysis.score));
     
     // Cache the result
     analysisCache.set(cacheKey, analysis);
@@ -129,94 +155,8 @@ Rules:
 
   } catch (error) {
     console.error('Gemini API Error:', error);
-    console.warn('Falling back to rule-based analysis');
-    return getFallbackAnalysis(title);
+    throw error; // Re-throw to be handled by calling component
   }
-}
-
-/**
- * Fallback rule-based analysis when API fails
- */
-function getFallbackAnalysis(title) {
-  const analysis = {
-    score: 50,
-    strengths: [],
-    improvements: [],
-    suggestions: [],
-    reasoning: 'Basic rule-based analysis (AI unavailable)'
-  };
-
-  const titleLower = title.toLowerCase();
-  const titleLength = title.length;
-
-  // Length check
-  if (titleLength >= 40 && titleLength <= 60) {
-    analysis.score += 15;
-    analysis.strengths.push('✓ Optimal length (40-60 characters)');
-  } else if (titleLength > 60) {
-    analysis.improvements.push('→ Shorten to 40-60 characters for better visibility');
-  } else {
-    analysis.improvements.push('→ Expand slightly for more context (aim for 40-60 chars)');
-  }
-
-  // Numbers check
-  if (/\d+/.test(title)) {
-    analysis.score += 15;
-    analysis.strengths.push('✓ Includes numbers - adds specificity and credibility');
-  } else {
-    analysis.improvements.push('→ Add specific numbers (e.g., "7 ways" vs "ways")');
-  }
-
-  // Question format
-  if (/^(how|why|what|when|where|should|can|is|are)/i.test(title)) {
-    analysis.score += 10;
-    analysis.strengths.push('✓ Question-based format engages curiosity');
-  }
-
-  // Power words
-  const powerWords = ['secret', 'truth', 'exposed', 'mistake', 'hidden', 'revealed', 'shocking', 'insider'];
-  if (powerWords.some(word => titleLower.includes(word))) {
-    analysis.score += 10;
-    analysis.strengths.push('✓ Uses emotional power words for impact');
-  } else {
-    analysis.improvements.push('→ Consider power words: "secret", "truth", "mistake", "revealed"');
-  }
-
-  // Specificity
-  const specificWords = ['stocks', 'mutual funds', 'portfolio', 'investment', 'sip', 'dividend', 'trading'];
-  if (specificWords.some(word => titleLower.includes(word))) {
-    analysis.score += 10;
-    analysis.strengths.push('✓ Specific finance topic - clear value proposition');
-  }
-
-  // Generate suggestions
-  const words = title.split(' ');
-  analysis.suggestions = [
-    `7 ${words.slice(0, 4).join(' ')}`,
-    `How to ${title.replace(/^(how to|why|what)\s+/i, '')}`,
-    `${words.slice(0, 3).join(' ')}: What You Must Know`
-  ].filter(s => s.length >= 20 && s.length <= 70);
-
-  // Ensure we have suggestions
-  if (analysis.suggestions.length === 0) {
-    analysis.suggestions.push(
-      title.substring(0, 50),
-      `Understanding ${title}`,
-      `${title} - Complete Guide`
-    );
-  }
-
-  // Ensure minimum feedback
-  if (analysis.strengths.length === 0) {
-    analysis.strengths.push('✓ Clear and straightforward title');
-  }
-  if (analysis.improvements.length === 0) {
-    analysis.improvements.push('→ Consider adding emotional hooks or specificity');
-  }
-
-  analysis.reasoning = `Score based on ${analysis.strengths.length} strengths and ${analysis.improvements.length} areas for improvement`;
-
-  return analysis;
 }
 
 /**

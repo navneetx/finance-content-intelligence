@@ -1,0 +1,87 @@
+# .github/workflows/daily-scrape.yml
+# Automated daily scraper that runs at 2 AM IST (8:30 PM UTC previous day)
+# Updates dashboard data automatically
+
+name: Daily Finance Content Scraper
+
+on:
+  schedule:
+    # Runs daily at 2:00 AM IST (8:30 PM UTC)
+    - cron: '30 20 * * *'
+  
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-api-python-client
+      
+      - name: Run scraper
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: |
+          cd dashboard
+          # Create temporary .env for scraper
+          echo "YOUTUBE_API_KEY=$YOUTUBE_API_KEY" > scraper_env.txt
+          cd ..
+          python scraper.py
+      
+      - name: Move latest data to dashboard
+        run: |
+          # Find the latest generated JSON file
+          LATEST_FILE=$(ls -t finance_content_data_*.json | head -1)
+          if [ -f "$LATEST_FILE" ]; then
+            cp "$LATEST_FILE" dashboard/src/data/finance_content_data.json
+            echo "Updated dashboard with: $LATEST_FILE"
+          else
+            echo "No new data file generated"
+            exit 1
+          fi
+      
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "Automated Scraper"
+          
+          # Check if there are changes
+          if git diff --quiet; then
+            echo "No changes to commit"
+          else
+            git add dashboard/src/data/finance_content_data.json
+            git commit -m "🤖 Automated daily scrape - $(date +'%Y-%m-%d %H:%M IST')"
+            git push
+            echo "✓ Data updated and pushed successfully"
+          fi
+      
+      - name: Log scrape completion
+        run: |
+          echo "Scraper completed at $(date)"
+          echo "Data file size: $(du -h dashboard/src/data/finance_content_data.json | cut -f1)"
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "⚠️ Scraper failed! Check the logs above."
+          exit 1
+
+# Note: To set up this workflow:
+# 1. Store your YouTube API key as a GitHub Secret named 'YOUTUBE_API_KEY'
+#    - Go to Settings → Secrets and variables → Actions
+#    - Create new repository secret with your YouTube API key
+# 2. The workflow will run automatically daily at 2 AM IST
+# 3. You can also trigger manually from Actions tab
+# 4. Each run updates the data and auto-deploys on Vercel (via GitHub integration)

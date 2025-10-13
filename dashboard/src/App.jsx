@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { TrendingUp, Clock, Eye, Target, Sparkles, Award } from 'lucide-react';
+import { TrendingUp, Clock, Eye, Target, Sparkles, Award, Info, Calendar } from 'lucide-react';
 import financeData from './data/finance_content_data.json';
 import { analyzeTitleWithGemini } from './utils/gemini-api';
 
 // Use real scraped data
 const SAMPLE_DATA = financeData;
+
+// Calculate last updated date from data
+const getLastUpdated = () => {
+  const dates = SAMPLE_DATA.map(v => new Date(v.published_at));
+  const latest = new Date(Math.max(...dates));
+  return latest.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
 
 const FinanceContentDashboard = () => {
   const [activeTab, setActiveTab] = useState('analytics');
@@ -21,7 +28,8 @@ const FinanceContentDashboard = () => {
 
   // Process data for visualizations
   const engagementData = SAMPLE_DATA.map(v => ({
-    name: v.title.substring(0, 20) + '...',
+    name: v.title.substring(0, 25) + '...',
+    fullName: v.title,
     engagement: parseFloat(calculateEngagement(v)),
     views: v.views
   })).sort((a, b) => b.engagement - a.engagement);
@@ -34,7 +42,7 @@ const FinanceContentDashboard = () => {
       return acc;
     }, {})
   ).map(([channel, data]) => ({
-    channel: channel.substring(0, 20),
+    channel: channel.substring(0, 18),
     fullChannel: channel,
     avgViews: Math.round(data.total / data.count)
   })).sort((a, b) => b.avgViews - a.avgViews).slice(0, 8);
@@ -50,140 +58,168 @@ const FinanceContentDashboard = () => {
   const ENGAGEMENT_COLOR = '#00D09C';
   const CHANNEL_COLOR = '#6366f1';
 
-  // AI Title Analysis
+  // Calculate dynamic Y-axis domains
+  const maxEngagement = Math.max(...engagementData.slice(0, 8).map(d => d.engagement));
+  const engagementDomain = [0, Math.ceil(maxEngagement * 1.15)];
+  
+  const maxAvgViews = Math.max(...channelPerformance.map(d => d.avgViews));
+  const viewsDomain = [0, Math.ceil(maxAvgViews * 1.1)];
+
+  // AI Title Analysis with Gemini (NO FALLBACK)
   const analyzeTitleWithAI = async () => {
     if (!titleInput.trim()) return;
     
     setIsAnalyzing(true);
+    setAiAnalysis(null);
     
-    setTimeout(() => {
-      const analysis = {
-        score: Math.floor(Math.random() * 40) + 60,
-        strengths: [],
-        improvements: [],
-        suggestions: []
-      };
-
-      const title = titleInput.toLowerCase();
+    try {
+      const referenceData = SAMPLE_DATA
+        .map(v => ({
+          title: v.title,
+          views: v.views,
+          engagement: calculateEngagement(v)
+        }))
+        .sort((a, b) => parseFloat(b.engagement) - parseFloat(a.engagement))
+        .slice(0, 20);
       
-      if (title.match(/\d+/)) {
-        analysis.strengths.push('✓ Uses numbers - increases credibility');
-      } else {
-        analysis.improvements.push('→ Add specific numbers (e.g., "5 Ways..." instead of "Ways...")');
-      }
-
-      if (titleInput.length < 60) {
-        analysis.strengths.push('✓ Good length - under 60 characters');
-      } else {
-        analysis.improvements.push('→ Shorten to under 60 chars for better visibility');
-      }
-
-      if (title.match(/how|why|what|when/)) {
-        analysis.strengths.push('✓ Question-based format engages curiosity');
-      }
-
-      if (title.match(/secret|truth|exposed|mistake|hidden/)) {
-        analysis.strengths.push('✓ Uses power words for emotional impact');
-      } else {
-        analysis.improvements.push('→ Consider power words: "secret", "truth", "mistake", "hidden"');
-      }
-
-      analysis.suggestions = [
-        titleInput.replace(/(\d+)/, '7').substring(0, 55),
-        `Why ${titleInput.split(' ').slice(0, 4).join(' ')} (The Truth)`,
-        `${titleInput.split(' ')[0]} ${titleInput.split(' ')[1]}: What Nobody Tells You`
-      ].filter(s => s.length > 10);
-
+      const analysis = await analyzeTitleWithGemini(titleInput, referenceData);
       setAiAnalysis(analysis);
+    } catch (error) {
+      console.error('Analysis failed:', error);
+      setAiAnalysis({
+        score: 0,
+        strengths: [],
+        improvements: ['⚠️ AI analysis unavailable. Please check your API key or try again later.'],
+        suggestions: [],
+        reasoning: 'API Error - Unable to analyze title'
+      });
+    } finally {
       setIsAnalyzing(false);
-    }, 1500);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="w-full sm:w-auto">
+              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent">
                 FinContent Intelligence
               </h1>
-              <p className="text-slate-600 mt-1">Content strategy powered by data & AI</p>
+              <p className="text-slate-600 mt-1 text-sm sm:text-base">Content strategy powered by data & AI</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
               <button
                 onClick={() => setActiveTab('analytics')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg font-medium transition-all text-sm ${
                   activeTab === 'analytics'
                     ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
                     : 'bg-white text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <TrendingUp className="inline w-4 h-4 mr-2" />
-                Analytics
+                <TrendingUp className="inline w-4 h-4 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Analytics</span>
+                <span className="sm:hidden">Charts</span>
               </button>
               <button
                 onClick={() => setActiveTab('videos')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg font-medium transition-all text-sm ${
                   activeTab === 'videos'
                     ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30'
                     : 'bg-white text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <Eye className="inline w-4 h-4 mr-2" />
+                <Eye className="inline w-4 h-4 mr-1 sm:mr-2" />
                 Videos
               </button>
               <button
                 onClick={() => setActiveTab('optimizer')}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 rounded-lg font-medium transition-all text-sm ${
                   activeTab === 'optimizer'
                     ? 'bg-teal-500 text-white shadow-lg shadow-teal-500/30'
                     : 'bg-white text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <Sparkles className="inline w-4 h-4 mr-2" />
-                Title Optimizer
+                <Sparkles className="inline w-4 h-4 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Title Optimizer</span>
+                <span className="sm:hidden">AI</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      {/* Info Banner */}
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <Info className="w-5 h-5 flex-shrink-0 mt-0.5 sm:mt-0" />
+            <div className="flex-1">
+              <p className="font-medium text-sm sm:text-base">
+                Analyzing {SAMPLE_DATA.length}+ finance videos from 15 top Indian creators
+              </p>
+              <p className="text-emerald-100 text-xs sm:text-sm mt-1">
+                Uncovering engagement patterns to help you create viral finance content
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-emerald-100 text-xs sm:text-sm bg-white/10 px-3 py-1.5 rounded-full">
+              <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
+              <span>Data: {getLastUpdated()}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {activeTab === 'analytics' ? (
           <div className="space-y-6">
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               {[
                 { label: 'Total Videos', value: SAMPLE_DATA.length, icon: Eye, bgColor: 'bg-blue-100', iconColor: 'text-blue-600' },
                 { label: 'Avg Views', value: `${Math.round(SAMPLE_DATA.reduce((a, b) => a + b.views, 0) / SAMPLE_DATA.length / 1000)}K`, icon: TrendingUp, bgColor: 'bg-emerald-100', iconColor: 'text-emerald-600' },
                 { label: 'Avg Duration', value: `${Math.round(SAMPLE_DATA.reduce((a, b) => a + (b.duration_seconds || 0), 0) / SAMPLE_DATA.length / 60)}m`, icon: Clock, bgColor: 'bg-purple-100', iconColor: 'text-purple-600' },
                 { label: 'Top Engagement', value: `${Math.max(...SAMPLE_DATA.map(v => parseFloat(calculateEngagement(v)))).toFixed(2)}%`, icon: Award, bgColor: 'bg-orange-100', iconColor: 'text-orange-600' },
               ].map((stat, i) => (
-                <div key={i} className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-                  <div className={`w-12 h-12 rounded-lg ${stat.bgColor} flex items-center justify-center mb-3`}>
-                    <stat.icon className={`w-6 h-6 ${stat.iconColor}`} />
+                <div key={i} className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg ${stat.bgColor} flex items-center justify-center mb-2 sm:mb-3`}>
+                    <stat.icon className={`w-5 h-5 sm:w-6 sm:h-6 ${stat.iconColor}`} />
                   </div>
-                  <p className="text-slate-600 text-sm font-medium">{stat.label}</p>
-                  <p className="text-2xl font-bold text-slate-900 mt-1">{stat.value}</p>
+                  <p className="text-slate-600 text-xs sm:text-sm font-medium">{stat.label}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-slate-900 mt-1">{stat.value}</p>
                 </div>
               ))}
             </div>
 
             {/* Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
               {/* Engagement Chart */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Videos by Engagement</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={engagementData.slice(0, 5)}>
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-slate-200">
+                <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-4">Top Videos by Engagement</h3>
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart 
+                    data={engagementData.slice(0, 8)} 
+                    margin={{ top: 20, right: 10, bottom: 80, left: 10 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis />
+                    <XAxis 
+                      dataKey="name" 
+                      tick={{ fontSize: 11 }} 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={100}
+                      interval={0}
+                    />
+                    <YAxis domain={engagementDomain} />
                     <Tooltip 
                       contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }}
                       formatter={(value) => `${value}%`}
+                      labelFormatter={(label) => {
+                        const video = engagementData.find(v => v.name === label);
+                        return video ? video.fullName : label;
+                      }}
                     />
                     <Bar dataKey="engagement" fill={ENGAGEMENT_COLOR} radius={[8, 8, 0, 0]} />
                   </BarChart>
@@ -192,16 +228,30 @@ const FinanceContentDashboard = () => {
               </div>
 
               {/* Channel Performance */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Average Views by Channel</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={channelPerformance}>
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-slate-200">
+                <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-4">Average Views by Channel</h3>
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart 
+                    data={channelPerformance}
+                    margin={{ top: 20, right: 10, bottom: 80, left: 10 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="channel" tick={{ fontSize: 11 }} angle={-15} textAnchor="end" height={80} />
-                    <YAxis />
+                    <XAxis 
+                      dataKey="channel" 
+                      tick={{ fontSize: 10 }} 
+                      angle={-45} 
+                      textAnchor="end" 
+                      height={100}
+                      interval={0}
+                    />
+                    <YAxis domain={viewsDomain} />
                     <Tooltip 
                       contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }}
                       formatter={(value) => value.toLocaleString()}
+                      labelFormatter={(label) => {
+                        const channel = channelPerformance.find(c => c.channel === label);
+                        return channel ? channel.fullChannel : label;
+                      }}
                     />
                     <Bar dataKey="avgViews" fill={CHANNEL_COLOR} radius={[8, 8, 0, 0]} />
                   </BarChart>
@@ -209,8 +259,8 @@ const FinanceContentDashboard = () => {
               </div>
 
               {/* Duration Distribution */}
-              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4">Video Length Distribution</h3>
+              <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-slate-200">
+                <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-4">Video Length Distribution</h3>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
@@ -219,7 +269,7 @@ const FinanceContentDashboard = () => {
                       cy="50%"
                       labelLine={false}
                       label={({ range, percent }) => `${range}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={100}
+                      outerRadius={90}
                       fill="#8884d8"
                       dataKey="count"
                     >
@@ -233,8 +283,8 @@ const FinanceContentDashboard = () => {
               </div>
 
               {/* Insights Panel */}
-              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-6 border border-emerald-200">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 sm:p-6 border border-emerald-200">
+                <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-4 flex items-center">
                   <Target className="w-5 h-5 mr-2 text-emerald-600" />
                   Key Insights
                 </h3>
@@ -257,11 +307,11 @@ const FinanceContentDashboard = () => {
           </div>
         ) : activeTab === 'videos' ? (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">Top Finance Videos</h2>
-              <p className="text-slate-600 mb-6">Browse and watch the highest engaging finance content</p>
+            <div className="bg-white rounded-xl p-4 sm:p-6 shadow-sm border border-slate-200">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">Top Finance Videos</h2>
+              <p className="text-slate-600 mb-6 text-sm sm:text-base">Browse and watch the highest engaging finance content</p>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {SAMPLE_DATA
                   .sort((a, b) => parseFloat(calculateEngagement(b)) - parseFloat(calculateEngagement(a)))
                   .slice(0, 30)
@@ -276,8 +326,8 @@ const FinanceContentDashboard = () => {
                             {video.title}
                           </h3>
                           <p className="text-xs text-slate-600 mb-2">{video.channel}</p>
-                          <div className="flex items-center gap-3 text-xs text-slate-500 mb-3">
-                            <span>👁 {(video.views / 1000).toFixed(0)}K views</span>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-3">
+                            <span>👁 {(video.views / 1000).toFixed(0)}K</span>
                             <span>📊 {calculateEngagement(video)}%</span>
                           </div>
                           <a
@@ -297,13 +347,13 @@ const FinanceContentDashboard = () => {
           </div>
         ) : (
           <div className="max-w-3xl mx-auto">
-            <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-8">
+            <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-6 sm:p-8">
               <div className="text-center mb-8">
                 <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <Sparkles className="w-8 h-8 text-white" />
                 </div>
-                <h2 className="text-2xl font-bold text-slate-900">AI Title Optimizer</h2>
-                <p className="text-slate-600 mt-2">Get instant feedback on your content titles</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">AI Title Optimizer</h2>
+                <p className="text-slate-600 mt-2 text-sm sm:text-base">Get intelligent feedback powered by Google Gemini AI</p>
               </div>
 
               <div className="space-y-4">
@@ -315,8 +365,8 @@ const FinanceContentDashboard = () => {
                     type="text"
                     value={titleInput}
                     onChange={(e) => setTitleInput(e.target.value)}
-                    placeholder="e.g., Best Stocks to Buy in 2024"
-                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    placeholder="e.g., 7 Best Stocks to Buy in 2024 for Long-Term Growth"
+                    className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                     onKeyPress={(e) => e.key === 'Enter' && analyzeTitleWithAI()}
                   />
                   <p className="text-xs text-slate-500 mt-1">
@@ -327,9 +377,9 @@ const FinanceContentDashboard = () => {
                 <button
                   onClick={analyzeTitleWithAI}
                   disabled={!titleInput.trim() || isAnalyzing}
-                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-lg font-medium hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/30"
+                  className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white py-3 rounded-lg font-medium hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-emerald-500/30 text-sm sm:text-base"
                 >
-                  {isAnalyzing ? 'Analyzing...' : 'Analyze Title'}
+                  {isAnalyzing ? 'Analyzing with AI...' : 'Analyze Title with AI'}
                 </button>
               </div>
 
@@ -339,7 +389,7 @@ const FinanceContentDashboard = () => {
                     <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 text-white text-3xl font-bold shadow-lg">
                       {aiAnalysis.score}
                     </div>
-                    <p className="text-slate-600 mt-2">Engagement Score</p>
+                    <p className="text-slate-600 mt-2 text-sm sm:text-base">Engagement Score</p>
                   </div>
 
                   {aiAnalysis.strengths.length > 0 && (
@@ -383,10 +433,10 @@ const FinanceContentDashboard = () => {
         )}
       </main>
 
-      <footer className="mt-16 py-8 border-t border-slate-200 bg-white">
-        <div className="max-w-7xl mx-auto px-6 text-center text-slate-600 text-sm">
-          <p>Built with React, Recharts & AI • Analyzing {SAMPLE_DATA.length}+ Finance Videos</p>
-          <p className="mt-1 text-xs">Data from YouTube's Top Finance Creators</p>
+      <footer className="mt-16 py-6 sm:py-8 border-t border-slate-200 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 text-center text-slate-600 text-xs sm:text-sm">
+          <p>Built with React, Recharts & Google Gemini AI • Analyzing {SAMPLE_DATA.length}+ Finance Videos</p>
+          <p className="mt-1 text-xs">Data from YouTube's Top Finance Creators • Last Updated: {getLastUpdated()}</p>
         </div>
       </footer>
     </div>
